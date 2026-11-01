@@ -123,7 +123,7 @@
         <div class="empty" style="grid-column:1/-1"><strong>Belum ada media</strong>Foto dan video yang Anda upload akan tampil di sini.</div>
       </div>
     </section>
-    <div class="footer">BRCORE · Teks: · Foto & Video: </div>
+    <div class="footer">BRCORE · Data tersimpan di cloud Firebase & Supabase · Dapat diakses lintas perangkat</div>
   </main>
 
   <script>
@@ -202,6 +202,10 @@
     const SUPABASE_URL = "https://ckxhvnkaalgloejzqoos.supabase.co";
     const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_5_vAMuzznQ0khX_kVJZaKA_CMT1FhBt";
     const SUPABASE_BUCKET = "textvault-media";
+
+    // ID BRCORE tetap. Tidak bergantung pada browser/perangkat.
+    // Semua perangkat yang memakai PIN BRCORE ini akan membaca vault yang sama.
+    const VAULT_ID = "brcore-081263";
 
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
@@ -283,7 +287,7 @@
       }
     }
     async function loadNotes() {
-      const q = query(collection(db, "notes"), where("uid", "==", currentUser.uid));
+      const q = query(collection(db, "notes"), where("vaultId", "==", VAULT_ID));
       const snapshot = await getDocs(q);
       renderNotes(snapshot.docs.map(d => ({id:d.id, ...d.data()})));
     }
@@ -377,7 +381,7 @@
       }
     }
     async function loadMedia() {
-      const q = query(collection(db, "media"), where("uid", "==", currentUser.uid));
+      const q = query(collection(db, "media"), where("vaultId", "==", VAULT_ID));
       const snapshot = await getDocs(q);
       const records = snapshot.docs.map(d => ({id:d.id, ...d.data()}));
       const withUrls = await Promise.all(records.map(async item => {
@@ -412,7 +416,7 @@
           progressBar.style.width = "0%";
           const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 100);
           // Folder pertama harus sama dengan auth.uid() Supabase agar policy SELECT/INSERT cocok.
-          const storagePath = `${supabaseUser.id}/${Date.now()}_${crypto.randomUUID()}_${safeName}`;
+          const storagePath = `brcore-shared/${Date.now()}_${crypto.randomUUID()}_${safeName}`;
           const { error: uploadError } = await supabase.storage
             .from(SUPABASE_BUCKET)
             .upload(storagePath, file, { contentType: file.type, upsert: false });
@@ -420,6 +424,7 @@
 
           try {
             await addDoc(collection(db, "media"), {
+              vaultId: VAULT_ID,
               uid: currentUser.uid,
               supabaseUid: supabaseUser.id,
               name: file.name,
@@ -459,6 +464,7 @@
         }
 
         await addDoc(collection(db, "notes"), {
+          vaultId: VAULT_ID,
           uid: currentUser.uid,
           title: titleEl.value.trim(),
           content,
@@ -525,7 +531,7 @@
         supabaseUser = activeSession?.user || null;
         if (!supabaseUser) throw new Error("Identitas pengguna Supabase tidak ditemukan.");
         await loadMedia();
-        setStatus("Terhubung. Teks tersimpan di Firebase; foto dan video tersimpan di Supabase.");
+        setStatus("Terhubung. Penyimpanan BRCORE aktif dan dapat diakses dari perangkat lain.");
         setUploadStatus("Pilih foto atau video untuk mulai mengunggah.");
       } catch (error) {
         console.error("Supabase media connection error:", error);
