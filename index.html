@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cloud Autosave Notepad</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 30px; background-color: #f5f7fb; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 25px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        h2 { margin-top: 0; color: #333; }
+        textarea { width: 100%; height: 300px; padding: 15px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; resize: vertical; }
+        textarea:focus { border-color: #4a90e2; outline: none; }
+        .status { font-size: 14px; margin-top: 10px; color: #666; font-style: italic; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Cloud Notepad (Autosave Antar-Perangkat)</h2>
+    <textarea id="editor" placeholder="Ketik sesuatu di sini... Data akan langsung sinkron ke semua perangkat Anda."></textarea>
+    <div id="status" class="status">Menghubungkan ke cloud...</div>
+</div>
+
+<!-- Memuat SDK Firebase Modul CDN Resmi yang Benar -->
+<script type="module">
+    import { initializeApp } from "https://gstatic.com";
+    import { getFirestore, doc, setDoc, onSnapshot } from "https://gstatic.com";
+
+    // Konfigurasi Firebase milik Anda
+    const firebaseConfig = {
+        apiKey: "AIzaSyDdWHHISLZC_huL7gO1_XKbIiHRdjmSpUs",
+        authDomain: "web-autosave.firebaseapp.com",
+        projectId: "web-autosave",
+        storageBucket: "web-autosave.firebasestorage.app",
+        messagingSenderId: "575833092846",
+        appId: "1:575833092846:web:2793a71ceea16d86b879ff",
+        measurementId: "G-4WX96VSJJ5"
+    };
+
+    // Inisialisasi Firebase & Firestore
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    // Referensi ke dokumen di database
+    const docRef = doc(db, "catatan_user", "catatan_utama");
+
+    const editor = document.getElementById('editor');
+    const statusDiv = document.getElementById('status');
+    let timeoutDebounce = null;
+    let sedangMengetik = false;
+
+    // 1. Sinkronisasi Real-Time dengan Penanganan Error jika Rules memblokir
+    onSnapshot(docRef, (docSnap) => {
+        if (!sedangMengetik && docSnap.exists()) {
+            editor.value = docSnap.data().konten;
+            statusDiv.innerText = "Teks diperbarui dari cloud.";
+        } else if (!docSnap.exists()) {
+            statusDiv.innerText = "Mulai ketik untuk membuat catatan baru.";
+        }
+    }, (error) => {
+        console.error("Gagal memuat snapshot:", error);
+        statusDiv.innerText = "Akses ditolak. Pastikan Firebase Rules Anda sudah diatur ke 'Test Mode'.";
+    });
+
+    // 2. Fitur Autosave (Debouncing 1 detik)
+    editor.addEventListener('input', () => {
+        sedangMengetik = true;
+        statusDiv.innerText = "Sedang mengetik...";
+
+        clearTimeout(timeoutDebounce);
+
+        timeoutDebounce = setTimeout(async () => {
+            try {
+                await setDoc(docRef, {
+                    konten: editor.value,
+                    diubahPada: new Date()
+                }, { merge: true });
+
+                statusDiv.innerText = "Tersimpan otomatis di cloud!";
+                sedangMengetik = false;
+            } catch (error) {
+                console.error("Gagal menyimpan:", error);
+                statusDiv.innerText = "Gagal menyimpan data. Periksa koneksi atau Firebase Rules.";
+            }
+        }, 1000);
+    });
+</script>
+
+</body>
+</html>
