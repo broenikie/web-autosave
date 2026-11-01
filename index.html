@@ -3,28 +3,40 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cloud Autosave Notepad</title>
+    <title>Cloud Notepad dengan Tombol Kontrol</title>
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 30px; background-color: #f5f7fb; }
         .container { max-width: 800px; margin: 0 auto; background: white; padding: 25px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
         h2 { margin-top: 0; color: #333; }
-        textarea { width: 100%; height: 300px; padding: 15px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; resize: vertical; }
+        textarea { width: 100%; height: 300px; padding: 15px; font-size: 16px; border: 1px solid #ccc; border-radius: 6px; box-sizing: border-box; resize: vertical; margin-bottom: 15px; }
         textarea:focus { border-color: #4a90e2; outline: none; }
-        .status { font-size: 14px; margin-top: 10px; color: #666; font-style: italic; }
+        .button-group { display: flex; gap: 10px; margin-bottom: 10px; }
+        button { padding: 10px 20px; font-size: 14px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; transition: background 0.2s; }
+        .btn-save { background-color: #2ecc71; color: white; }
+        .btn-save:hover { background-color: #27ae60; }
+        .btn-delete { background-color: #e74c3c; color: white; }
+        .btn-delete:hover { background-color: #c0392b; }
+        .status { font-size: 14px; color: #666; font-style: italic; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>Cloud Notepad (Autosave Antar-Perangkat)</h2>
+    <h2>Cloud Notepad (Autosave & Manual)</h2>
     <textarea id="editor" placeholder="Ketik sesuatu di sini... Data akan langsung sinkron ke semua perangkat Anda."></textarea>
+    
+    <div class="button-group">
+        <button id="btnSave" class="btn-save">Simpan Teks</button>
+        <button id="btnDelete" class="btn-black btn-delete">Hapus Teks</button>
+    </div>
+
     <div id="status" class="status">Menghubungkan ke cloud...</div>
 </div>
 
 <!-- Memuat SDK Firebase Modul CDN Resmi -->
 <script type="module">
     import { initializeApp } from "https://gstatic.com";
-    import { getFirestore, doc, setDoc, onSnapshot } from "https://gstatic.com";
+    import { getFirestore, doc, setDoc, deleteDoc, onSnapshot } from "https://gstatic.com";
 
     // Konfigurasi Firebase Anda
     const firebaseConfig = {
@@ -46,47 +58,74 @@
 
     const editor = document.getElementById('editor');
     const statusDiv = document.getElementById('status');
+    const btnSave = document.getElementById('btnSave');
+    const btnDelete = document.getElementById('btnDelete');
+    
     let timeoutDebounce = null;
     let sedangMengetik = false;
 
-    // 1. Sinkronisasi Real-Time dengan Deteksi Status Koneksi
+    // Fungsi pembantu untuk menyimpan ke Firebase
+    async function simpanKeCloud() {
+        try {
+            statusDiv.innerText = "Menyimpan ke cloud...";
+            await setDoc(docRef, {
+                konten: editor.value,
+                diubahPada: new Date()
+            }, { merge: true });
+            statusDiv.innerText = "Tersimpan di cloud!";
+            sedangMengetik = false;
+        } catch (error) {
+            console.error("Gagal menyimpan:", error);
+            statusDiv.innerText = "Gagal menyimpan data. Pastikan Firebase Rules Anda diatur ke 'Test Mode'.";
+        }
+    }
+
+    // 1. Sinkronisasi Real-Time (Mendengarkan Perubahan Data di Cloud)
     onSnapshot(docRef, (docSnap) => {
-        if (!sedangMengetik && docSnap.exists()) {
-            editor.value = docSnap.data().konten;
-            statusDiv.innerText = "Teks diperbarui dari cloud.";
-        } else if (!docSnap.exists()) {
-            statusDiv.innerText = "Mulai ketik untuk membuat catatan baru.";
+        if (!sedangMengetik) {
+            if (docSnap.exists()) {
+                editor.value = docSnap.data().konten;
+                statusDiv.innerText = "Teks diperbarui dari cloud.";
+            } else {
+                editor.value = "";
+                statusDiv.innerText = "Mulai ketik untuk membuat catatan baru.";
+            }
         }
     }, (error) => {
         console.error("Firebase Error:", error);
-        if (error.code === 'permission-denied') {
-            statusDiv.innerText = "Akses ditolak! Ubah 'Rules' Firestore Anda menjadi 'allow read, write: if true;' di Firebase Console.";
-        } else {
-            statusDiv.innerText = "Gagal terhubung: " + error.message;
-        }
+        statusDiv.innerText = "Gagal memuat koneksi. Periksa Firebase Rules proyek Anda.";
     });
 
-    // 2. Fitur Autosave (Debouncing 1 detik setelah berhenti mengetik)
+    // 2. Fitur Autosave (Berjalan otomatis 1 detik setelah berhenti mengetik)
     editor.addEventListener('input', () => {
         sedangMengetik = true;
         statusDiv.innerText = "Sedang mengetik...";
-
         clearTimeout(timeoutDebounce);
+        timeoutDebounce = setTimeout(simpanKeCloud, 1000);
+    });
 
-        timeoutDebounce = setTimeout(async () => {
+    // 3. Aksi Tombol Simpan Manual
+    btnSave.addEventListener('click', () => {
+        clearTimeout(timeoutDebounce); // batalkan autosave yang sedang berjalan antrean
+        simpanKeCloud();
+    });
+
+    // 4. Aksi Tombol Hapus Catatan (Menghapus dokumen dari cloud & mengosongkan editor)
+    btnDelete.addEventListener('click', async () => {
+        if (confirm("Apakah Anda yakin ingin menghapus seluruh catatan di cloud?")) {
+            clearTimeout(timeoutDebounce);
+            sedangMengetik = true;
             try {
-                await setDoc(docRef, {
-                    konten: editor.value,
-                    diubahPada: new Date()
-                }, { merge: true });
-
-                statusDiv.innerText = "Tersimpan otomatis di cloud!";
-                sedangMengetik = false;
+                statusDiv.innerText = "Menghapus data di cloud...";
+                await deleteDoc(docRef);
+                editor.value = "";
+                statusDiv.innerText = "Catatan berhasil dihapus dari cloud!";
             } catch (error) {
-                console.error("Gagal menyimpan:", error);
-                statusDiv.innerText = "Gagal menyimpan data ke cloud.";
+                console.error("Gagal menghapus:", error);
+                statusDiv.innerText = "Gagal menghapus data dari cloud.";
             }
-        }, 1000);
+            sedangMengetik = false;
+        }
     });
 </script>
 
