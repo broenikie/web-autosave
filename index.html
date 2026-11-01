@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#101827">
-  <title>TextVault — Teks, Foto & Video</title>
+  <title>BRCORE — Teks, Foto & Video</title>
   <style>
     :root{color-scheme:dark;--bg:#0b1220;--panel:#121d30;--panel2:#17243a;--line:#26364f;--text:#edf3ff;--muted:#91a2bc;--accent:#7c9cff;--accent2:#a78bfa;--danger:#ff7185}
     *{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 15% 0%,#1c3152 0,transparent 38%),radial-gradient(ellipse at 90% 20%,#28204b 0,transparent 32%),var(--bg);color:var(--text);font:15px/1.55 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif}
@@ -57,7 +57,7 @@
     <div class="pin-card">
       <div class="pin-mark">✦</div>
       <h2>Selamat datang</h2>
-      <p class="pin-desc">Masukkan PIN untuk membuka TextVault</p>
+      <p class="pin-desc">Masukkan PIN untuk membuka BRCORE</p>
       <div class="pin-dots" id="pinDots" aria-hidden="true">
         <span class="pin-dot"></span><span class="pin-dot"></span><span class="pin-dot"></span>
         <span class="pin-dot"></span><span class="pin-dot"></span><span class="pin-dot"></span>
@@ -70,7 +70,7 @@
         <button class="key alt" data-action="clear">HAPUS</button><button class="key" data-key="0">0</button><button class="key alt" data-action="back">⌫</button>
       </div>
       <div class="pin-error" id="pinError" role="alert"></div>
-      <div class="pin-foot">TEXTVAULT · PRIVATE ACCESS</div>
+      <div class="pin-foot">BRCORE · PRIVATE ACCESS</div>
     </div>
   </section>
   <main class="wrap">
@@ -88,18 +88,18 @@
           </defs>
         </svg>
       </div>
-      <div><div class="brand">Text<span>Vault</span></div><div class="subbrand">Ruang penyimpanan teks pribadi</div></div>
+      <div><div class="brand">BR<span>CORE</span></div><div class="subbrand">Ruang penyimpanan teks pribadi</div></div>
     </header>
     <h1>Simpan ide, kapan saja.</h1>
-    <p class="intro">Tulis teks, tekan simpan, dan buka kembali kapan pun dari perangkat yang terhubung.</p>
+    <p class="intro">Simpan teks,foto,vidio tekan simpan, dan buka kembali kapan pun dari perangkat yang terhubung.</p>
 
     <section class="panel">
-      <label for="noteTitle">Judul (opsional)</label>
+      <label for="noteTitle">Judul</label>
       <input id="noteTitle" class="title-input" maxlength="100" placeholder="Contoh: Catatan penting">
       <label for="noteContent">Isi teks</label>
       <textarea id="noteContent" placeholder="Mulai tulis atau tempel teks Anda di sini..."></textarea>
       <div class="actions">
-        <span class="hint">Teks tersimpan di Firebase Firestore.</span>
+        <span class="hint">Teks tersimpan.</span>
         <button class="primary" id="saveBtn" disabled>＋ Simpan teks</button>
       </div>
       <div class="status" id="status" role="status">Menghubungkan ke database...</div>
@@ -123,7 +123,7 @@
         <div class="empty" style="grid-column:1/-1"><strong>Belum ada media</strong>Foto dan video yang Anda upload akan tampil di sini.</div>
       </div>
     </section>
-    <div class="footer">TextVault · Teks: Firebase · Foto & Video: Supabase Storage</div>
+    <div class="footer">BRCORE · Teks: · Foto & Video: </div>
   </main>
 
   <script>
@@ -140,9 +140,11 @@
       function submitIfComplete() {
         if (value.length !== 6) return;
         if (value === ACCESS_PIN) {
-          error.textContent = "PIN benar. Membuka TextVault...";
+          error.textContent = "PIN benar. Membuka BRCORE...";
           screen.classList.add("unlocked");
-          document.getElementById("saveBtn").disabled = true;
+          // Jangan men-disable tombol Simpan di sini.
+          // Firebase dapat sudah selesai login sebelum PIN dibuka.
+          // Status tombol dikendalikan oleh proses koneksi Firebase.
           setTimeout(() => screen.remove(), 400);
         } else {
           error.textContent = "PIN salah. Silakan coba lagi.";
@@ -452,18 +454,32 @@
       saveBtn.disabled = true;
       saveBtn.textContent = "Menyimpan...";
       try {
+        if (!currentUser) {
+          throw new Error("Firebase belum terhubung. Tunggu sampai status berubah menjadi siap.");
+        }
+
         await addDoc(collection(db, "notes"), {
           uid: currentUser.uid,
           title: titleEl.value.trim(),
           content,
           createdAt: serverTimestamp()
         });
+
         titleEl.value = "";
         contentEl.value = "";
         setStatus("Berhasil disimpan. Silakan buat teks baru.");
-        await loadNotes();
+
+        // Refresh daftar tidak boleh membatalkan status berhasil simpan.
+        try {
+          await loadNotes();
+        } catch (loadError) {
+          console.error("Catatan tersimpan, tetapi daftar gagal dimuat:", loadError);
+          setStatus("Teks berhasil disimpan, tetapi daftar belum bisa diperbarui: " + loadError.message, true);
+        }
+
         contentEl.focus();
       } catch (error) {
+        console.error("Firestore save error:", error);
         setStatus("Gagal menyimpan: " + error.message, true);
       } finally {
         saveBtn.disabled = false;
@@ -476,12 +492,23 @@
     try {
       const firebaseCredential = await signInAnonymously(auth);
       currentUser = firebaseCredential.user;
+
+      // Login Firebase berhasil = tombol Simpan langsung siap.
+      // Jangan menunggu loadNotes(), karena query daftar catatan yang
+      // gagal/terblokir rules tidak boleh membuat tombol Simpan "loading".
       saveBtn.disabled = false;
-      await loadNotes();
       setStatus("Terhubung ke Firebase. Teks siap disimpan.");
+
+      // Muat catatan secara terpisah. Jika gagal, tombol Simpan tetap aktif.
+      try {
+        await loadNotes();
+      } catch (error) {
+        console.error("Gagal memuat catatan:", error);
+        setStatus("Firebase terhubung, tetapi daftar teks belum bisa dimuat: " + error.message, true);
+      }
     } catch (error) {
       saveBtn.disabled = true;
-      setStatus("Koneksi Firebase gagal: " + error.message + ". Periksa Anonymous Authentication dan Firestore Rules.", true);
+      setStatus("Koneksi Firebase gagal: " + error.message + ". Aktifkan Anonymous Authentication dan periksa Firestore Rules.", true);
     }
 
     // Hubungkan Supabase secara terpisah khusus untuk foto/video.
